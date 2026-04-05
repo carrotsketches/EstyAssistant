@@ -244,3 +244,50 @@ export async function deleteListing(listingId: string): Promise<void> {
   });
   if (!res.ok) throw new Error("Failed to delete listing");
 }
+
+// ── Templates ──
+
+export interface TemplateItem {
+  id: string;
+  name: string;
+  orientation: string;
+  is_custom: boolean;
+  s3_key: string | null;
+}
+
+export async function getTemplates(): Promise<TemplateItem[]> {
+  const res = await fetch(`${API_BASE}/templates`);
+  if (!res.ok) throw new Error("Failed to fetch templates");
+  const data = await res.json();
+  return data.templates;
+}
+
+export async function saveTemplate(
+  name: string,
+  s3Key: string,
+  orientation: string = "vertical"
+): Promise<TemplateItem> {
+  const res = await fetch(`${API_BASE}/templates`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, s3_key: s3Key, orientation }),
+  });
+  if (!res.ok) throw new Error("Failed to save template");
+  return res.json();
+}
+
+export async function getTemplateUploadUrl(): Promise<{
+  upload_url: string;
+  template: TemplateItem;
+}> {
+  const res = await fetch(`${API_BASE}/templates/upload`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to get template upload URL");
+  return res.json();
+}
+
+export async function deleteTemplate(templateId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/templates/${templateId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Failed to delete template");
+}

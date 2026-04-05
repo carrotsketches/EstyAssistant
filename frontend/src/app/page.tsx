@@ -24,6 +24,8 @@ import ListingEditor from "@/components/ListingEditor";
 import MockupGallery from "@/components/MockupGallery";
 import ListingHistory from "@/components/ListingHistory";
 import ToastContainer, { createToast, type ToastMessage } from "@/components/Toast";
+import TemplateManager from "@/components/TemplateManager";
+import DarkModeToggle from "@/components/DarkModeToggle";
 
 const AVAILABLE_SIZES = ["5x7", "8x10", "11x14", "16x20"];
 
@@ -351,8 +353,9 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Etsy Connection Status */}
-        <div className="sm:text-right">
+        {/* Controls */}
+        <div className="flex items-center gap-3 sm:text-right">
+          <DarkModeToggle />
           {etsyStatus?.connected ? (
             <div className="flex items-center gap-2 sm:justify-end">
               <span className="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
@@ -648,10 +651,11 @@ export default function Home() {
         </section>
       )}
 
-      {/* Listing History */}
-      <section className="mb-6 sm:mb-8">
+      {/* Listing History & Template Manager */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 sm:mb-8">
         <ListingHistory onLoad={handleLoadListing} refreshKey={historyRefreshKey} />
-      </section>
+        <TemplateManager onToast={addToast} />
+      </div>
     </main>
   );
 }
