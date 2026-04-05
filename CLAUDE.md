@@ -4,112 +4,154 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Etsy Assistant is a CLI tool for pen & ink sketch artists that processes sketch photos into print-ready digital downloads and generates optimized Etsy listing metadata using Claude Vision. The shop is "Carrot Sketches."
+Etsy Assistant is a web application for pen & ink sketch artists that processes sketch photos into print-ready digital downloads and generates optimized Etsy listing metadata using Claude Vision. The shop is "Carrot Sketches."
 
-## Development Setup
-
-This project uses **uv** for dependency management with Python 3.12+.
-
-```bash
-uv sync --group dev          # Install all dependencies including dev
-uv run etsy-assistant --help  # Run the CLI
-```
-
-## Common Commands
-
-```bash
-# Run all tests
-uv run pytest
-
-# Run a single test file
-uv run pytest tests/test_autocrop.py
-
-# Run a specific test
-uv run pytest tests/test_autocrop.py::test_name -v
-
-# Process a single image
-uv run etsy-assistant process sketch.jpg -s 8x10 -s 5x7
-
-# Batch process a directory
-uv run etsy-assistant batch ./sketches/ -o ./output/ -s 8x10 -s 5x7
-
-# Generate listing with AI metadata
-uv run etsy-assistant generate-listing sketch.jpg --skip-processing
-
-# Full publish pipeline (process -> AI metadata -> Etsy draft)
-uv run etsy-assistant publish sketch.jpg -s 8x10 -s 5x7 -p 4.99
-
-# Authenticate with Etsy
-uv run etsy-assistant auth --api-key YOUR_KEY
-```
+The app has two main parts:
+- **Frontend**: Next.js (App Router) on Vercel — upload UI, before/after preview, size selector
+- **Backend**: FastAPI on AWS Lambda (container image) — image processing pipeline, AI metadata, S3 storage
 
 ## Architecture
 
-### Image Processing Pipeline (`src/etsy_assistant/pipeline.py`)
+```
+[Browser] → [Next.js on Vercel] → [API Gateway] → [FastAPI on Lambda] → [S3 / DynamoDB]
+                                                                        → [Claude API]
+                                                                        → [Etsy API]
+```
 
-Runs a sequential chain of CV steps on a sketch photo. Step order is fixed: `autocrop -> perspective -> background -> contrast` (defined in `STEP_ORDER`). Each step is a pure function receiving `(np.ndarray, PipelineConfig)` and returning a transformed array. Steps can be skipped via `--skip`. The pipeline continues on step failure (logs exception, uses previous result). After pipeline steps, `resize_for_print` produces size-specific outputs.
+## Development Setup
 
-### Pipeline Steps (`src/etsy_assistant/steps/`)
+### Backend
 
-- `autocrop.py` — detect and crop to the paper region using edge detection + contour finding
-- `perspective.py` — correct perspective via 4-point transform; falls back to Hough line rotation deskewing
-- `background.py` — clean paper background to white using adaptive thresholding + morphological operations
-- `contrast.py` — enhance ink via CLAHE + floor/ceiling normalization + gamma correction
-- `resize.py` — scale to standard print sizes (5x7, 8x10, 11x14, 16x20, A4) at target DPI; respects aspect ratio and orientation
-- `output.py` — save as PNG with DPI metadata via PIL/Pillow
-- `keywords.py` — Claude Vision API call to generate title/tags/description as structured JSON (default model: `claude-sonnet-4-20250514`)
-- `mockup.py` — composite processed sketch into frame template mockups; auto-detects frame interior, matches orientation
+```bash
+cd backend
+uv sync --group dev          # Install dependencies
+PYTHONPATH=src uvicorn api.main:app --reload  # Run locally on :8000
+uv run pytest                # Run tests
+```
 
-### Configuration (`src/etsy_assistant/config.py`)
+Requires: Python 3.12+, uv
 
-Single frozen dataclass `PipelineConfig` with all tunable parameters for every step (autocrop thresholds, perspective Hough params, background adaptive block size, contrast CLAHE settings, output DPI/format). Supports `with_overrides()` for per-call customization.
+### Frontend
 
-### Etsy API Integration (`src/etsy_assistant/etsy_api.py`)
+```bash
+cd frontend
+npm install                  # Install dependencies
+npm run dev                  # Run locally on :3000
+npm run build                # Production build
+```
 
-OAuth 2.0 PKCE flow with local callback server. Handles token refresh automatically on 401 responses. Creates draft listings and uploads images/files via Etsy v3 API. Listing defaults: digital download type, taxonomy ID 1 (Art & Collectibles > Prints), who_made="i_did", quantity=999999.
+Requires: Node.js 22+
 
-### CLI (`src/etsy_assistant/cli.py`)
+### Environment Variables
 
-Click-based with 7 commands: `process`, `batch`, `info`, `generate-listing`, `batch-listing`, `auth`, `publish`. The `publish` command chains the full pipeline: process -> AI metadata -> Etsy upload as draft. Supports `--dry-run` for testing without Etsy upload.
+Backend (`backend/.env`):
+- `S3_BUCKET` — S3 bucket name for image storage
+- `AWS_REGION` — AWS region (default: us-east-1)
+- `CORS_ORIGINS` — Comma-separated allowed origins
+- `ANTHROPIC_API_KEY` — For Claude Vision listing generation
 
-### Templates (`src/etsy_assistant/templates/`)
+Frontend (`frontend/.env.local`):
+- `NEXT_PUBLIC_API_URL` — Backend URL (default: http://localhost:8000)
 
-Room mockup templates (JPEG images + `templates.json` geometry data) for composite preview images. Three templates included: light wood frame, styled wood frame with candle, black frame on rattan dresser. All current templates are vertical orientation.
+## Project Structure
 
-### Memory (`memory/`)
+```
+EstyAssistant/
+├── backend/                           # FastAPI app → Lambda container
+│   ├── Dockerfile
+│   ├── pyproject.toml
+│   ├── src/
+│   │   ├── etsy_assistant/            # Core image processing package
+│   │   │   ├── config.py              # PipelineConfig frozen dataclass
+│   │   │   ├── pipeline.py            # CV pipeline orchestration
+│   │   │   ├── etsy_api.py            # Etsy OAuth + API integration
+│   │   │   ├── steps/                 # Pipeline steps (pure functions)
+│   │   │   │   ├── autocrop.py        # Crop to paper region
+│   │   │   │   ├── perspective.py     # Perspective/rotation correction
+│   │   │   │   ├── background.py      # Paper background cleanup
+│   │   │   │   ├── contrast.py        # Ink contrast enhancement
+│   │   │   │   ├── resize.py          # Print size scaling
+│   │   │   │   ├── output.py          # Image encoding (bytes + file)
+│   │   │   │   ├── keywords.py        # Claude Vision metadata generation
+│   │   │   │   └── mockup.py          # Frame template compositing
+│   │   │   └── templates/             # Frame mockup images + JSON
+│   │   └── api/                       # FastAPI web layer
+│   │       ├── main.py                # App + Mangum Lambda handler
+│   │       ├── models.py              # Pydantic request/response schemas
+│   │       ├── s3.py                  # S3 presigned URL helpers
+│   │       └── routes/
+│   │           ├── upload.py          # GET /upload-url
+│   │           ├── process.py         # POST /process
+│   │           └── listing.py         # POST /listing/generate
+│   └── tests/
+├── frontend/                          # Next.js app → Vercel
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── page.tsx               # Main upload + process page
+│   │   │   └── layout.tsx
+│   │   └── lib/
+│   │       └── api.ts                 # Typed backend API client
+│   ├── package.json
+│   └── next.config.ts
+├── infra/
+│   └── template.yaml                 # SAM template (Lambda + S3 + DynamoDB)
+├── src/                               # Original CLI package (preserved)
+├── tests/                             # Original CLI tests
+└── pyproject.toml                     # Original CLI config
+```
 
-Project context and user feedback logs (Markdown files) documenting shop preferences, listing style, and workflow notes.
+## API Endpoints
 
-## Testing
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/health` | Health check |
+| `GET` | `/upload-url` | Presigned S3 upload URL |
+| `POST` | `/process` | Run CV pipeline on uploaded image |
+| `POST` | `/listing/generate` | AI metadata via Claude Vision |
 
-Tests use synthetic images (numpy arrays with drawn shapes) via fixtures in `conftest.py` — no real image files needed. The `ANTHROPIC_API_KEY` environment variable must be unset or mocked for tests that touch `keywords.py`.
+## Image Processing Pipeline
 
-Test files cover all major components:
-- `test_autocrop.py` — border removal, content preservation, fallback handling
-- `test_background.py` — adaptive thresholding and morphological cleanup
-- `test_contrast.py` — CLAHE + levels + gamma + sharpening
-- `test_perspective.py` — 4-point transform and rotation deskewing
-- `test_resize.py` — print size scaling, aspect ratio, orientation
-- `test_pipeline.py` — end-to-end processing, multi-size, skip-steps, debug mode
-- `test_keywords.py` — Claude Vision API integration, JSON parsing, metadata save/load
-- `test_etsy_api.py` — OAuth flow, token refresh, listing creation, uploads (mocked HTTP)
+**Step order**: `autocrop → perspective → background → contrast`
+
+Each step is a pure function: `(np.ndarray, PipelineConfig) → np.ndarray`. Steps can be skipped. The pipeline continues on step failure.
+
+Two I/O modes:
+- `process_image_bytes()` — bytes in, list of `(size, bytes)` out (for web API)
+- `process_image()` — file path in, file paths out (for CLI)
 
 ## Key Constraints
 
 - All CV operations use OpenCV (`cv2`) with BGR color order
-- Images flow through the pipeline as `np.ndarray` (not PIL); convert to RGB only for final save
-- Pipeline steps are stateless pure functions: `(np.ndarray, PipelineConfig) -> np.ndarray`
+- Images flow through the pipeline as `np.ndarray` (not PIL)
 - Listing titles max 140 chars, tags max 13 items each max 20 chars
 - Etsy digital file upload limit is 20 MB
-- Supported print sizes: 5x7, 8x10, 11x14, 16x20, A4 (8.27x11.69 inches)
+- Supported print sizes: 5x7, 8x10, 11x14, 16x20, A4
 - Default output DPI is 300
-- Credentials stored at `~/.etsy-assistant/credentials.json` with 0o600 permissions
-- No CI/CD pipeline — local development only
+- Browser uploads directly to S3 via presigned URLs (not through the API)
+
+## Deployment
+
+### Backend (AWS Lambda container)
+```bash
+cd infra
+sam build
+sam deploy --guided
+```
+
+### Frontend (Vercel)
+Connect the `frontend/` directory to Vercel. Set `NEXT_PUBLIC_API_URL` to the API Gateway URL from SAM output.
+
+## Testing
+
+Backend tests use synthetic images (numpy arrays) via fixtures in `conftest.py`. No real image files or AWS credentials needed for unit tests.
+
+```bash
+cd backend && uv run pytest           # Backend tests
+cd frontend && npm run build           # Frontend type check + build
+```
 
 ## Dependencies
 
-**Production:** opencv-python-headless (>=4.9), Pillow (>=10.0), numpy (>=1.26), click (>=8.1), anthropic (>=0.40), httpx (>=0.27)
+**Backend**: opencv-python-headless, Pillow, numpy, anthropic, httpx, fastapi, mangum, boto3
 
-**Dev:** pytest (>=8.0)
-
-**Build:** hatchling
+**Frontend**: next, react, tailwindcss, typescript
