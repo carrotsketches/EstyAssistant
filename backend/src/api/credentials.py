@@ -225,6 +225,72 @@ def delete_listing(listing_id: str) -> bool:
     return True
 
 
+# ── Custom Templates ──
+
+def save_custom_template(template_id: str, name: str, s3_key: str,
+                         orientation: str = "vertical",
+                         frame_bbox: list[int] | None = None) -> dict:
+    """Save a custom frame template to DynamoDB."""
+    table = _get_table()
+    now = int(time.time())
+    item = {
+        "pk": f"template#{template_id}",
+        "template_id": template_id,
+        "name": name,
+        "s3_key": s3_key,
+        "orientation": orientation,
+        "created_at": now,
+    }
+    if frame_bbox:
+        item["frame_bbox"] = frame_bbox
+    table.put_item(Item=item)
+    logger.info("Saved custom template %s: %s", template_id, name)
+    return _template_to_dict(item)
+
+
+def list_custom_templates() -> list[dict]:
+    """List custom templates."""
+    table = _get_table()
+    from boto3.dynamodb.conditions import Key as DDBKey
+
+    resp = table.scan(
+        FilterExpression=DDBKey("pk").begins_with("template#"),
+        Limit=100,
+    )
+    items = resp.get("Items", [])
+    items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+    return [_template_to_dict(item) for item in items]
+
+
+def delete_custom_template(template_id: str) -> bool:
+    """Delete a custom template."""
+    table = _get_table()
+    from boto3.dynamodb.conditions import Key as DDBKey
+
+    resp = table.scan(
+        FilterExpression=DDBKey("pk").eq(f"template#{template_id}"),
+        Limit=1,
+    )
+    items = resp.get("Items", [])
+    if not items:
+        return False
+    table.delete_item(Key={"pk": items[0]["pk"]})
+    logger.info("Deleted custom template %s", template_id)
+    return True
+
+
+def _template_to_dict(item: dict) -> dict:
+    return {
+        "id": item.get("template_id", ""),
+        "name": item.get("name", ""),
+        "s3_key": item.get("s3_key", ""),
+        "orientation": item.get("orientation", "vertical"),
+        "frame_bbox": item.get("frame_bbox"),
+        "is_custom": True,
+        "created_at": item.get("created_at", 0),
+    }
+
+
 def _listing_to_dict(item: dict) -> dict:
     """Convert a DynamoDB listing item to a clean dict."""
     return {

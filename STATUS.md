@@ -21,7 +21,7 @@
 ### Phase 3: AI Metadata + Listing Editor
 - `POST /mockups/generate` endpoint with S3 storage
 - ListingEditor component: editable title, tag chips, description
-- MockupGallery component: frame mockup previews
+- MockupGallery component: frame mockup previews with skeleton loading
 - Bytes-based mockup generation in shared core
 - **PR #4** — merged
 
@@ -33,6 +33,7 @@
 - Connect/disconnect UI with status indicator
 - Publish section with price input and polling spinner
 - OAuth callback page
+- Auto-save to history on successful publish
 - **PR #5** — merged
 
 ### Phase 5: Infrastructure & Deployment
@@ -40,32 +41,61 @@
 - `scripts/deploy-backend.sh` — one-command backend deploy
 - `DEPLOY.md` — step-by-step guide from AWS account creation to running app
 - Vercel config for frontend deployment
+- GitHub Actions CI: core tests, backend tests, frontend build
 - **PR #3** — merged
+
+### Listing History
+- DynamoDB storage for saved listings
+- Backend CRUD: `GET/POST /listings`, `GET/DELETE /listings/{id}`
+- Frontend: collapsible history panel, save button, load into editor
+- **PR #6** — merged
+
+### UI Polish
+- Toast notification system (success/error/info with auto-dismiss)
+- Mobile-responsive layout throughout
+- Batch upload: multi-file select, sequential processing, progress indicator
+- Loading skeletons and spinner animations
+- **PR #7** — merged
+
+### Custom Templates + Dark Mode + CI
+- Custom frame template upload via UI (DynamoDB + S3)
+- Template manager: list bundled + custom, upload, delete
+- Dark mode toggle with system preference detection
+- GitHub Actions CI: 3 jobs (core tests, backend tests, frontend build)
+- **PR #8** — open
 
 ## Test Coverage
 
 | Suite | Tests | Location |
 |-------|-------|----------|
 | Core pipeline + CV steps | 87 | `tests/` |
-| Backend API routes | 25 | `backend/tests/` |
+| Backend API routes | 85 | `backend/tests/` |
 | Frontend | Builds clean | `frontend/` |
-| **Total** | **112** | |
+| **Total** | **172** | |
 
 ## API Endpoints
 
-| Method | Path | Purpose | Phase |
-|--------|------|---------|-------|
-| `GET` | `/health` | Health check | 1 |
-| `GET` | `/upload-url` | Presigned S3 upload URL | 1 |
-| `POST` | `/process` | Run CV pipeline | 1 |
-| `POST` | `/listing/generate` | AI metadata via Claude Vision | 1 |
-| `POST` | `/mockups/generate` | Frame mockup compositing | 3 |
-| `GET` | `/auth/etsy/start` | Begin Etsy OAuth | 4 |
-| `POST` | `/auth/etsy/callback` | Exchange OAuth code | 4 |
-| `GET` | `/auth/etsy/status` | Check Etsy connection | 4 |
-| `POST` | `/auth/etsy/disconnect` | Disconnect Etsy | 4 |
-| `POST` | `/publish` | Process + create Etsy draft | 4 |
-| `GET` | `/jobs/{id}` | Poll job status | 4 |
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/health` | Health check |
+| `GET` | `/upload-url` | Presigned S3 upload URL |
+| `POST` | `/process` | Run CV pipeline |
+| `POST` | `/listing/generate` | AI metadata via Claude Vision |
+| `POST` | `/mockups/generate` | Frame mockup compositing |
+| `GET` | `/auth/etsy/start` | Begin Etsy OAuth |
+| `POST` | `/auth/etsy/callback` | Exchange OAuth code |
+| `GET` | `/auth/etsy/status` | Check Etsy connection |
+| `POST` | `/auth/etsy/disconnect` | Disconnect Etsy |
+| `POST` | `/publish` | Process + create Etsy draft |
+| `GET` | `/jobs/{id}` | Poll job status |
+| `GET` | `/listings` | List saved listings |
+| `POST` | `/listings` | Save listing to history |
+| `GET` | `/listings/{id}` | Get a saved listing |
+| `DELETE` | `/listings/{id}` | Delete a saved listing |
+| `GET` | `/templates` | List frame templates |
+| `POST` | `/templates` | Save custom template |
+| `POST` | `/templates/upload` | Get template upload URL |
+| `DELETE` | `/templates/{id}` | Delete custom template |
 
 ## Estimated Costs
 
@@ -78,15 +108,9 @@
 | Anthropic API | ~$0.05-0.10/image |
 | **Total** | **~$1-5/month** |
 
-### Listing History
-- DynamoDB storage for saved listings
-- Backend CRUD: `GET/POST /listings`, `GET/DELETE /listings/{id}`
-- Frontend: collapsible history panel, save button, load into editor
-- **PR #6** — open
-
 ## Future Work
 
-- [ ] Batch processing in web UI — upload multiple sketches
-- [ ] UI polish — loading toasts, mobile-responsive, dark mode
-- [ ] Custom frame templates — upload your own mockup images
-- [ ] Analytics — track listing performance
+- [ ] Analytics — track listing performance on Etsy
+- [ ] Watermark option — add subtle watermark to preview images
+- [ ] Image comparison slider — drag to compare before/after
+- [ ] Keyboard shortcuts — Ctrl+Enter to process, etc.
