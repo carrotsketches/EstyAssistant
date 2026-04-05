@@ -71,4 +71,4 @@ Tests use synthetic images (numpy arrays with drawn shapes) via fixtures in `con
 - Listing titles max 140 chars, tags max 13 items each max 20 chars
 - Etsy digital file upload limit is 20 MB
 - Credentials stored at `~/.etsy-assistant/credentials.json` with 0o600 permissions
-- No git repository — this project is managed locally
+- GitHub repo: carrot-studio-creator/EstyAssistant (private)
