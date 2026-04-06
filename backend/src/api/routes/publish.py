@@ -44,6 +44,24 @@ class JobStatusResponse(BaseModel):
     error: str | None = None
 
 
+class BulkPublishItem(BaseModel):
+    s3_key: str
+    sizes: list[str] = Field(default_factory=lambda: ["8x10"])
+    title: str
+    description: str
+    tags: list[str]
+    price: float
+
+
+class BulkPublishRequest(BaseModel):
+    items: list[BulkPublishItem]
+
+
+class BulkPublishResponse(BaseModel):
+    job_ids: list[str]
+    total: int
+
+
 def _on_token_refresh(creds: EtsyCredentials) -> None:
     """Callback to save refreshed tokens to DynamoDB."""
     save_credentials(
@@ -121,3 +139,60 @@ def get_job_status(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return JobStatusResponse(**job)
+
+
+@router.post("/publish/bulk", response_model=BulkPublishResponse)
+def bulk_publish_listings(req: BulkPublishRequest):
+    """Publish multiple listings to Etsy sequentially.
+
+    Creates a job for each item and processes them in order.
+    Returns all job IDs for polling.
+    """
+    creds_data = load_credentials()
+    if not creds_data:
+        raise HTTPException(status_code=401, detail="Etsy not connected")
+
+    creds = EtsyCredentials(**creds_data)
+    job_ids = []
+
+    for item in req.items:
+        job_id = uuid.uuid4().hex[:12]
+        create_job(job_id)
+        job_ids.append(job_id)
+
+        try:
+            update_job(job_id, "processing")
+
+            image_bytes = read_image(item.s3_key)
+            results = process_image_bytes(image_bytes, sizes=item.sizes)
+
+            draft = create_draft_listing(
+                creds, item.title, item.description, item.tags, item.price,
+            )
+
+            if results:
+                first_label, first_bytes = results[0]
+                upload_listing_image_bytes(
+                    creds, draft.listing_id, first_bytes,
+                    filename=f"{first_label}.png",
+                    on_refresh=_on_token_refresh,
+                )
+
+            for size_label, png_data in results:
+                upload_listing_file_bytes(
+                    creds, draft.listing_id, png_data,
+                    filename=f"{size_label}.png",
+                    on_refresh=_on_token_refresh,
+                )
+
+            update_job(job_id, "completed", result={
+                "listing_id": draft.listing_id,
+                "listing_url": draft.url,
+                "title": draft.title,
+            })
+
+        except Exception as e:
+            logger.exception("Bulk publish failed for job %s", job_id)
+            update_job(job_id, "failed", error=str(e))
+
+    return BulkPublishResponse(job_ids=job_ids, total=len(job_ids))

@@ -291,3 +291,97 @@ export async function deleteTemplate(templateId: string): Promise<void> {
   });
   if (!res.ok) throw new Error("Failed to delete template");
 }
+
+// ── Bundles ──
+
+export interface BundleListingInput {
+  title: string;
+  tags: string[];
+  description: string;
+  price: number | null;
+  image_filenames: string[];
+}
+
+export interface BundleOutput {
+  theme: string;
+  pack_size: number;
+  title: string;
+  tags: string[];
+  description: string;
+  price: number;
+  image_filenames: string[];
+  source_indices: number[];
+}
+
+export async function generateBundles(
+  listings: BundleListingInput[],
+  groups?: { theme: string; indices: number[] }[]
+): Promise<BundleOutput[]> {
+  const res = await fetch(`${API_BASE}/bundles/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ listings, groups }),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Bundle generation failed: ${detail}`);
+  }
+  const data = await res.json();
+  return data.bundles;
+}
+
+// ── Bulk Publish ──
+
+export interface BulkPublishItem {
+  s3_key: string;
+  sizes: string[];
+  title: string;
+  description: string;
+  tags: string[];
+  price: number;
+}
+
+export interface BulkPublishResponse {
+  job_ids: string[];
+  total: number;
+}
+
+export async function bulkPublish(
+  items: BulkPublishItem[]
+): Promise<BulkPublishResponse> {
+  const res = await fetch(`${API_BASE}/publish/bulk`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Bulk publish failed: ${detail}`);
+  }
+  return res.json();
+}
+
+// ── Analytics ──
+
+export interface ListingStats {
+  listing_id: string;
+  title: string;
+  views: number;
+  favorites: number;
+  url: string | null;
+}
+
+export interface AnalyticsResponse {
+  listings: ListingStats[];
+  total_views: number;
+  total_favorites: number;
+}
+
+export async function getAnalytics(): Promise<AnalyticsResponse> {
+  const res = await fetch(`${API_BASE}/analytics`);
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Analytics fetch failed: ${detail}`);
+  }
+  return res.json();
+}

@@ -26,6 +26,8 @@ import ListingHistory from "@/components/ListingHistory";
 import ToastContainer, { createToast, type ToastMessage } from "@/components/Toast";
 import TemplateManager from "@/components/TemplateManager";
 import DarkModeToggle from "@/components/DarkModeToggle";
+import BundleGenerator from "@/components/BundleGenerator";
+import AnalyticsDashboard from "@/components/AnalyticsDashboard";
 
 const AVAILABLE_SIZES = ["5x7", "8x10", "11x14", "16x20"];
 
@@ -648,6 +650,21 @@ export default function Home() {
           >
             Connect Etsy
           </button>
+        </section>
+      )}
+
+      {/* Bundle Generator — uses listing history */}
+      <section className="mb-6 sm:mb-8">
+        <BundleGenerator
+          refreshKey={historyRefreshKey}
+          onToast={addToast}
+        />
+      </section>
+
+      {/* Analytics Dashboard */}
+      {etsyStatus?.connected && (
+        <section className="mb-6 sm:mb-8">
+          <AnalyticsDashboard connected={etsyStatus.connected} />
         </section>
       )}
 
