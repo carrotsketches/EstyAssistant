@@ -215,9 +215,10 @@ Use this path when you want the AWS stack but have no local dev environment — 
 2. Trusted entity type: **Web identity**
    - Identity provider: `token.actions.githubusercontent.com`
    - Audience: `sts.amazonaws.com`
-   - GitHub organization: `paleyzpl`
+   - GitHub organization: `carrotsketches`
    - GitHub repository: `EstyAssistant`
    - (Leave branch empty to allow any branch; tighten later)
+   - Note: `carrotsketches/EstyAssistant` is the fork that auto-deploys. If you also want to run the workflow from the dev repo `paleyzpl/EstyAssistant`, add a second `StringLike` entry for its `sub` to the trust policy after creation.
 3. Attach permissions — pick one:
    - **Simple (recommended for a personal project):** attach `PowerUserAccess` + `IAMFullAccess`. SAM needs `IAMFullAccess` to create the Lambda execution role.
    - **Tight:** craft an inline policy covering CloudFormation, Lambda, ECR, S3, DynamoDB, API Gateway v2, SNS, CloudWatch Logs/Alarms, and `iam:*Role*` on the stack's execution role. Easier to do after the first successful deploy.
@@ -265,7 +266,7 @@ Running `aws cloudformation delete-stack --stack-name etsy-assistant` from any m
 
 ### Troubleshooting
 
-- **`Not authorized to perform sts:AssumeRoleWithWebIdentity`** — the trust policy's `sub` condition doesn't match. Check it reads `repo:paleyzpl/EstyAssistant:*`.
+- **`Not authorized to perform sts:AssumeRoleWithWebIdentity`** — the trust policy's `sub` condition doesn't match the repo the workflow is running from. Check it reads `repo:carrotsketches/EstyAssistant:*` (or whichever repo you're deploying from).
 - **`AccessDenied` during `sam deploy`** — role is missing a permission. Either attach `PowerUserAccess` + `IAMFullAccess`, or read the error to add the specific action to your inline policy.
 - **First build is slow (~5 min)** — Docker layers are uncached on the runner. Subsequent deploys reuse ECR image layers.
 
