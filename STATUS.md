@@ -108,9 +108,44 @@
 | Anthropic API | ~$0.05-0.10/image |
 | **Total** | **~$1-5/month** |
 
-## Future Work
+## Current Deployment
 
-- [ ] Analytics — track listing performance on Etsy
-- [ ] Watermark option — add subtle watermark to preview images
-- [ ] Image comparison slider — drag to compare before/after
-- [ ] Keyboard shortcuts — Ctrl+Enter to process, etc.
+- **Frontend**: Live at `https://esty-assistant.vercel.app/` (Vercel Hobby, free)
+  - Deployed from fork: `carrotsketches/EstyAssistant`
+  - Auto-deploys on push to `main` branch of the fork
+  - Sync fork from `paleyzpl/EstyAssistant` to trigger redeploy
+- **Backend**: Not deployed yet (frontend is static/UI-only)
+- **Development repo**: `paleyzpl/EstyAssistant` (Claude Code has access here)
+
+## Next Steps (Priority Order)
+
+### 1. Deploy Backend to Fly.io (Free Tier) — ~15 min
+Everything is ready in the repo:
+- `backend/Dockerfile.fly` — Python 3.12 slim image for Fly.io
+- `fly.toml` — Fly.io config (auto-stop, 512MB, shared CPU)
+- `scripts/setup-free.sh` — One-command setup script
+
+Steps:
+1. Install Fly CLI: `curl -L https://fly.io/install.sh | sh`
+2. Sign up: `fly auth signup` (use new ProtonMail)
+3. Run: `bash scripts/setup-free.sh`
+4. Set secrets: `fly secrets set ANTHROPIC_API_KEY=... ETSY_API_KEY=...`
+5. Update Vercel env var `NEXT_PUBLIC_API_URL` to the Fly.io URL
+
+### 2. Set Up Supabase (Free Tier) — ~10 min
+For database (credentials, jobs, listings) and S3-compatible storage:
+1. Sign up at supabase.com (use new ProtonMail)
+2. Create project, get connection string + S3 endpoint
+3. Set env vars on Fly.io: `DB_BACKEND=supabase`, `STORAGE_BACKEND=supabase`
+
+### 3. Connect Etsy OAuth
+1. Create Etsy app at developers.etsy.com
+2. Set callback URL to `https://esty-assistant.vercel.app/auth/etsy/callback`
+3. Add `ETSY_API_KEY` to Fly.io secrets
+
+### 4. Future Enhancements
+- [ ] Custom domain for Vercel
+- [ ] Analytics dashboard — track listing performance
+- [ ] Watermark option for preview images
+- [ ] SEO score improvements
+- [ ] Bundle generator refinements
