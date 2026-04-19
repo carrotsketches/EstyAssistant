@@ -160,17 +160,73 @@ Two I/O modes:
 
 ## Deployment
 
+**Target stack: AWS end-to-end.** The backend runs on AWS Lambda (container image) behind API Gateway, with S3 for image storage and DynamoDB for credentials, jobs, listings, and custom templates. The frontend is static and deployed to Vercel, but all backend state lives in AWS. Fly.io and Supabase are **not** used — do not add code, config, or docs that reference them.
+
+### AWS Services
+
+| Service | Purpose |
+|---------|---------|
+| Lambda (container) | FastAPI app via Mangum adapter |
+| API Gateway (HTTP API) | Public HTTPS endpoint, CORS, routes `/*` → Lambda |
+| ECR | Stores the Lambda container image |
+| S3 | Uploaded sketches, processed outputs, mockups, custom templates |
+| DynamoDB | Single table for Etsy credentials, async jobs, saved listings, templates |
+| IAM | Lambda execution role (S3 + DynamoDB access, logs) |
+| CloudWatch Logs | Lambda logs + metrics |
+| SSM Parameter Store (or Secrets Manager) | `ANTHROPIC_API_KEY`, `ETSY_API_KEY`, `ETSY_CLIENT_SECRET` |
+
 ### Backend (AWS Lambda container)
 ```bash
 # Build from repo root
 docker build -f backend/Dockerfile -t etsy-assistant .
 
-# Or via SAM
+# Or via SAM (preferred — provisions Lambda + API Gateway + S3 + DynamoDB)
 cd infra && sam build && sam deploy --guided
 ```
 
+`infra/template.yaml` is the source of truth for all AWS resources.
+
 ### Frontend (Vercel)
-Connect the `frontend/` directory to Vercel. Set `NEXT_PUBLIC_API_URL` to the API Gateway URL.
+Connect the `frontend/` directory to Vercel. Set `NEXT_PUBLIC_API_URL` to the API Gateway invoke URL from the SAM stack outputs.
+
+### Deployment Plan (AWS)
+
+**Phase A — First backend deploy**
+1. Create AWS account and IAM user with `AdministratorAccess` for bootstrap; configure `aws configure` locally.
+2. Install SAM CLI and Docker.
+3. `cd infra && sam build && sam deploy --guided` — accept defaults, pick a stack name (e.g. `etsy-assistant-prod`) and region (`us-east-1`).
+4. Capture stack outputs: `ApiUrl`, `S3Bucket`, `DynamoDBTable`.
+5. Set Lambda env vars (via SAM template parameters or console): `S3_BUCKET`, `DYNAMODB_TABLE`, `CORS_ORIGINS`, `FRONTEND_URL`.
+6. Store secrets in SSM Parameter Store (`/etsy-assistant/anthropic-api-key`, `/etsy-assistant/etsy-api-key`, `/etsy-assistant/etsy-client-secret`) and reference them from `template.yaml`.
+
+**Phase B — Wire frontend to AWS**
+1. In Vercel project settings, set `NEXT_PUBLIC_API_URL` to the API Gateway URL.
+2. Redeploy frontend; verify `/health` from the browser.
+3. Add the Vercel domain to `CORS_ORIGINS` on the Lambda.
+
+**Phase C — Etsy OAuth**
+1. Register the app at developers.etsy.com; set callback to `https://<vercel-domain>/auth/etsy/callback`.
+2. Put `ETSY_API_KEY` and `ETSY_CLIENT_SECRET` in SSM; redeploy the stack.
+3. End-to-end test: connect Etsy → process a sketch → publish a draft listing.
+
+**Phase D — Hardening**
+- CloudWatch alarms on Lambda errors + 5xx from API Gateway.
+- S3 lifecycle rule: expire uploads/ prefix after 7 days.
+- DynamoDB on-demand billing (default in template).
+- GitHub Actions: OIDC role for `sam deploy` on push to `main`.
+- Custom domain via Route 53 + ACM cert (optional).
+
+### Estimated Cost (AWS-only)
+
+| Service | Monthly |
+|---------|---------|
+| Lambda + API Gateway | ~$0 (free tier) |
+| S3 | ~$0.50 |
+| DynamoDB (on-demand) | ~$0 (free tier) |
+| CloudWatch Logs | ~$0.10 |
+| Anthropic API | ~$0.05–0.10 per image |
+| Vercel (frontend) | $0 (Hobby) |
+| **Total** | **~$1–5/month** at low volume |
 
 ## Testing
 
