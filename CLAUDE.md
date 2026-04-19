@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Etsy Assistant is a tool for pen & ink sketch artists that processes sketch photos into print-ready digital downloads and generates optimized Etsy listing metadata using Claude Vision. The shop is "Carrot Sketches."
+Etsy Assistant is a tool for pen & ink sketch artists (the shop is "Carrot Sketches") that processes sketch photos into print-ready digital downloads and generates optimized Etsy listing metadata via Claude Vision.
 
-It supports two interfaces sharing the same core library:
-- **CLI**: Click-based command-line tool (`uv run etsy-assistant`)
-- **Web**: Next.js frontend (Vercel) + FastAPI backend (AWS Lambda container)
+Two interfaces share the same core library:
+- **CLI** — Click-based command-line tool (`uv run etsy-assistant`)
+- **Web** — Next.js frontend (Vercel) + FastAPI backend (AWS Lambda container)
 
 ## Architecture
 
@@ -16,153 +16,150 @@ It supports two interfaces sharing the same core library:
 CLI:  etsy-assistant process sketch.jpg -s 8x10
 Web:  [Browser] → [Next.js on Vercel] → [API Gateway] → [FastAPI on Lambda] → [S3]
                                                                               → [Claude API]
+                                                                              → [Etsy API]
 Both use: src/etsy_assistant/ (shared core package)
 ```
 
-## Shared Core Package (`src/etsy_assistant/`)
+### Shared Core Package (`src/etsy_assistant/`)
 
-The core image processing and Etsy integration code lives in `src/etsy_assistant/`. Both the CLI and web backend import from this package.
+The image processing, listing generation, bundle/mockup logic, and Etsy integration live in `src/etsy_assistant/`. Both the CLI and web backend import from this package.
 
-- **Do not duplicate** this package into `backend/src/`. The backend imports it via `PYTHONPATH`.
-- The Dockerfile copies from `src/etsy_assistant/` at the repo root.
+- **Do not duplicate** this package into `backend/src/`. The backend imports it via `PYTHONPATH=../src:src`.
+- The Dockerfile copies from `src/etsy_assistant/` at the **repo root** — builds must run from there, not from `backend/`.
+
+### Backend (`backend/src/api/`)
+
+FastAPI app wrapped with Mangum for Lambda. `main.py` wires CORS, a per-IP in-memory rate limiter (`RATE_LIMIT_PER_MINUTE`, default 60; resets on cold start), and routers from `routes/`. The Lambda entry point is `handler = Mangum(app, lifespan="off")`.
+
+#### Pluggable store backends (`backend/src/api/stores/`)
+
+`stores/__init__.get_store()` selects the data store based on `DB_BACKEND`:
+- `dynamo` (default) — `dynamo_store.py`, DynamoDB single-table
+- `supabase` — `supabase_store.py`, Postgres `kv_store` table auto-created from `SCHEMA_SQL`
+
+`api/credentials.py` is a thin wrapper over the selected store for Etsy tokens, async jobs, saved listings, and custom templates.
+
+### Frontend (`frontend/src/`)
+
+Next.js App Router. `app/page.tsx` is the main upload/process/publish surface. Components live in `src/components/` (ListingEditor, MockupGallery, ListingHistory, TemplateManager, BundleGenerator, AnalyticsDashboard, SeoScore, ImageCompare, Toast, DarkModeToggle, KeyboardShortcuts). `src/lib/api.ts` is the typed backend client. OAuth callback lives at `app/auth/etsy/callback/`.
+
+**Important** (from `frontend/AGENTS.md`): the Next.js version in this repo has breaking changes from training data. Read `node_modules/next/dist/docs/` before writing framework code; heed deprecation notices.
+
+## Image Processing Pipeline
+
+**Step order**: `autocrop → perspective → background → contrast` (defined by `STEP_ORDER` in `pipeline.py`).
+
+Each step is a pure function `(np.ndarray, PipelineConfig) → np.ndarray`. Steps can be skipped individually; the pipeline **continues on step failure** (exceptions are logged and the previous result is used).
+
+Two I/O modes in `pipeline.py`:
+- `process_image_bytes(bytes, sizes, ...)` → `list[(size_label, png_bytes)]` — used by the web API
+- `process_image(path, output_path, sizes, ...)` → `list[Path]` — used by the CLI; supports `debug=True` to dump intermediates to `<input>/debug/`
+
+Additional standalone step modules under `steps/`: `resize.py`, `output.py` (file + bytes encoding), `keywords.py` (Claude Vision listing metadata), `mockup.py` (frame compositing, bundled templates in `templates/templates.json`), `watermark.py`.
+
+Bundle logic lives in `bundles.py`: `BUNDLE_SIZES` (3-pack 75%, 5-pack 70% of sum), `merge_tags`, `calculate_bundle_price`, `generate_bundle_title`, `generate_bundle_description_simple`, plus a Claude-driven grouping prompt.
 
 ## Development Setup
 
-### CLI
+Requires Python 3.12+, uv, Node.js 22+.
 
+### Core / CLI
 ```bash
-uv sync --group dev                  # Install all dependencies
-uv run etsy-assistant --help         # Run the CLI
-uv run pytest                        # Run core tests
+uv sync --group dev                         # Install deps
+uv run etsy-assistant --help                # CLI commands: process, batch, info, generate-listing, batch-listing, publish
+uv run pytest                               # Run all core tests
+uv run pytest tests/test_pipeline.py        # Run one file
+uv run pytest -k "perspective"              # Run by keyword
+uv run pytest -v tests/test_autocrop.py::test_autocrop_finds_paper  # Single test
 ```
 
-### Backend (web API)
-
+### Backend
 ```bash
 cd backend
-uv sync --group dev                                    # Install dependencies
-PYTHONPATH=../src:src uvicorn api.main:app --reload     # Run locally on :8000
-PYTHONPATH=../src:src uv run pytest                     # Run tests
+uv sync --group dev
+PYTHONPATH=../src:src uvicorn api.main:app --reload   # Local server on :8000
+PYTHONPATH=../src:src uv run pytest                   # All backend tests
+PYTHONPATH=../src:src uv run pytest tests/test_process.py -v
 ```
+
+Backend tests mock AWS with `moto[dynamodb,s3]`; no real AWS or Anthropic credentials are needed.
 
 ### Frontend
-
 ```bash
 cd frontend
-npm install                  # Install dependencies
-npm run dev                  # Run locally on :3000
-npm run build                # Production build
+npm install
+npm run dev       # Dev server on :3000
+npm run build     # Production build (also serves as type check)
+npm run lint      # ESLint
 ```
 
-Requires: Python 3.12+, uv, Node.js 22+
-
-### Environment Variables
+## Environment Variables
 
 Backend (`backend/.env`):
-- `S3_BUCKET` — S3 bucket name for image storage
-- `AWS_REGION` — AWS region (default: us-east-1)
-- `CORS_ORIGINS` — Comma-separated allowed origins
-- `ANTHROPIC_API_KEY` — For Claude Vision listing generation
-- `ETSY_API_KEY` — Etsy OAuth client ID
-- `FRONTEND_URL` — Frontend URL for OAuth callback (default: http://localhost:3000)
-- `DYNAMODB_TABLE` — DynamoDB table for credentials + jobs
+- `S3_BUCKET` — image storage bucket
+- `AWS_REGION` — default `us-east-1`
+- `CORS_ORIGINS` — comma-separated allowed origins
+- `RATE_LIMIT_PER_MINUTE` — default 60
+- `ANTHROPIC_API_KEY` — Claude Vision
+- `ETSY_API_KEY`, `ETSY_CLIENT_SECRET` — Etsy OAuth
+- `FRONTEND_URL` — OAuth callback redirect (default `http://localhost:3000`)
+- `DB_BACKEND` — `dynamo` (default) or `supabase`
+- `DYNAMODB_TABLE` — table name (DynamoDB backend)
+- `SUPABASE_DB_URL` — Postgres connection string (Supabase backend)
 
 Frontend (`frontend/.env.local`):
-- `NEXT_PUBLIC_API_URL` — Backend URL (default: http://localhost:8000)
-
-## Project Structure
-
-```
-EstyAssistant/
-├── src/etsy_assistant/                # SHARED core package (CLI + web)
-│   ├── config.py                      # PipelineConfig frozen dataclass
-│   ├── pipeline.py                    # CV pipeline (file + bytes I/O)
-│   ├── cli.py                         # Click CLI commands
-│   ├── etsy_api.py                    # Etsy OAuth + API integration
-│   └── steps/                         # Pipeline steps (pure functions)
-│       ├── autocrop.py                # Crop to paper region
-│       ├── perspective.py             # Perspective/rotation correction
-│       ├── background.py              # Paper background cleanup
-│       ├── contrast.py                # Ink contrast enhancement
-│       ├── resize.py                  # Print size scaling
-│       ├── output.py                  # Image encoding (bytes + file)
-│       ├── keywords.py                # Claude Vision metadata generation
-│       └── mockup.py                  # Frame template compositing
-├── tests/                             # Core package tests
-├── pyproject.toml                     # CLI project config
-│
-├── backend/                           # FastAPI web layer → Lambda container
-│   ├── Dockerfile                     # Built from repo root
-│   ├── pyproject.toml                 # Web-only dependencies
-│   ├── src/api/                       # FastAPI routes + helpers
-│   │   ├── main.py                    # App + Mangum Lambda handler
-│   │   ├── models.py                  # Pydantic request/response schemas
-│   │   ├── s3.py                      # S3 presigned URL helpers
-│   │   ├── credentials.py             # DynamoDB credential + job store
-│   │   └── routes/
-│   │       ├── upload.py              # GET /upload-url
-│   │       ├── process.py             # POST /process
-│   │       ├── listing.py             # POST /listing/generate
-│   │       ├── mockups.py             # POST /mockups/generate
-│   │       ├── auth.py                # Etsy OAuth endpoints
-│   │       └── publish.py             # POST /publish, GET /jobs/{id}
-│   └── tests/                         # API + integration tests
-│
-├── frontend/                          # Next.js app → Vercel
-│   ├── src/app/page.tsx               # Main upload + process + publish page
-│   ├── src/app/auth/etsy/callback/    # OAuth callback page
-│   ├── src/components/                # ListingEditor, MockupGallery
-│   └── src/lib/api.ts                 # Typed backend API client
-│
-└── infra/template.yaml                # SAM template (Lambda + S3 + DynamoDB)
-```
+- `NEXT_PUBLIC_API_URL` — backend URL (default `http://localhost:8000`)
 
 ## API Endpoints
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/health` | Health check |
-| `GET` | `/upload-url` | Presigned S3 upload URL |
-| `POST` | `/process` | Run CV pipeline on uploaded image |
+| `GET` | `/health` | Health check (skipped by rate limiter) |
+| `GET` | `/upload-url` | Presigned S3 upload URL (browser uploads directly to S3) |
+| `POST` | `/process` | Run CV pipeline on an uploaded image |
 | `POST` | `/listing/generate` | AI metadata via Claude Vision |
 | `POST` | `/mockups/generate` | Frame mockup compositing |
+| `GET`/`POST`/`DELETE` | `/templates[/…]` | List bundled + custom templates, upload custom, delete |
+| `POST` | `/bundles/generate` | Generate N-pack bundle listings from individual listings |
+| `GET` | `/analytics` | Aggregate views/favorites for connected shop's listings |
 | `GET` | `/auth/etsy/start` | Begin Etsy OAuth, return redirect URL |
 | `POST` | `/auth/etsy/callback` | Exchange OAuth code for tokens |
 | `GET` | `/auth/etsy/status` | Check if Etsy is connected |
 | `POST` | `/auth/etsy/disconnect` | Disconnect Etsy account |
-| `POST` | `/publish` | Process + create Etsy draft listing |
+| `POST` | `/publish` | Process + create Etsy draft listing (async job) |
 | `GET` | `/jobs/{id}` | Poll async job status |
-| `GET` | `/listings` | List saved listings (history) |
-| `GET` | `/listings/{id}` | Get a single saved listing |
-| `POST` | `/listings` | Save a listing to history |
-| `DELETE` | `/listings/{id}` | Delete a saved listing |
-
-## Image Processing Pipeline
-
-**Step order**: `autocrop → perspective → background → contrast`
-
-Each step is a pure function: `(np.ndarray, PipelineConfig) → np.ndarray`. Steps can be skipped. The pipeline continues on step failure.
-
-Two I/O modes:
-- `process_image_bytes()` — bytes in, list of `(size, bytes)` out (for web API)
-- `process_image()` — file path in, file paths out (for CLI)
+| `GET`/`POST` | `/listings` | List / save listings (history) |
+| `GET`/`DELETE` | `/listings/{id}` | Fetch / delete saved listing |
 
 ## Key Constraints
 
-- All CV operations use OpenCV (`cv2`) with BGR color order
-- Images flow through the pipeline as `np.ndarray` (not PIL)
-- Listing titles max 140 chars, tags max 13 items each max 20 chars
-- Etsy digital file upload limit is 20 MB
-- Supported print sizes: 5x7, 8x10, 11x14, 16x20, A4
-- Default output DPI is 300
-- Browser uploads directly to S3 via presigned URLs (not through the API)
-- The Dockerfile must be built from the **repo root** (not `backend/`) to access `src/`
+- CV operations use OpenCV (`cv2`) with **BGR** color order; images are `np.ndarray` throughout (not PIL).
+- Listing titles: max 140 chars. Tags: max 13 items, each ≤20 chars.
+- Etsy digital file upload limit: 20 MB.
+- Supported print sizes: `5x7`, `8x10`, `11x14`, `16x20`, `A4`. Default DPI: 300.
+- Browser uploads go **directly to S3** via presigned URLs — not through the API.
+- `backend/Dockerfile` must be built from the **repo root** to access `src/etsy_assistant/`.
+
+## Testing
+
+Tests use synthetic images (numpy arrays) from `tests/conftest.py` — no real image files or AWS/Anthropic credentials needed. Backend tests stub AWS with moto.
+
+```bash
+uv run pytest                                      # Core (~90 tests)
+cd backend && PYTHONPATH=../src:src uv run pytest   # Backend (~85 tests)
+cd frontend && npm run build                        # Frontend type check + build
+```
+
+## CI (`.github/workflows/`)
+
+- `ci.yml` — runs on every push/PR to `main`: three parallel jobs (core tests, backend tests, frontend build).
+- `deploy.yml` — manual `workflow_dispatch`; uses OIDC (`AWS_ROLE_ARN` var) to run `sam build && sam deploy` with secrets/vars for CORS, frontend URL, alarm email, and API keys.
 
 ## Deployment
 
-**Target stack: AWS end-to-end.** The backend runs on AWS Lambda (container image) behind API Gateway, with S3 for image storage and DynamoDB for credentials, jobs, listings, and custom templates. The frontend is static and deployed to Vercel, but all backend state lives in AWS. Fly.io and Supabase are **not** used — do not add code, config, or docs that reference them.
+**Target stack: AWS end-to-end.** Backend on Lambda (container) behind API Gateway, S3 for images, DynamoDB for state. Frontend static on Vercel. `infra/template.yaml` is the source of truth for all AWS resources.
 
-### AWS Services
+Fly.io + Supabase wiring (`fly.toml`, `backend/Dockerfile.fly`, `scripts/setup-free.sh`, `stores/supabase_store.py`) exists as a legacy free-tier alternative but is **not the primary path** — do not extend it or add new references to it.
 
 | Service | Purpose |
 |---------|---------|
@@ -170,78 +167,28 @@ Two I/O modes:
 | API Gateway (HTTP API) | Public HTTPS endpoint, CORS, routes `/*` → Lambda |
 | ECR | Stores the Lambda container image |
 | S3 | Uploaded sketches, processed outputs, mockups, custom templates |
-| DynamoDB | Single table for Etsy credentials, async jobs, saved listings, templates |
-| IAM | Lambda execution role (S3 + DynamoDB access, logs) |
+| DynamoDB | Single table for credentials, jobs, listings, templates |
+| IAM | Lambda execution role (S3 + DynamoDB + logs) |
 | CloudWatch Logs | Lambda logs + metrics |
-| SSM Parameter Store (or Secrets Manager) | `ANTHROPIC_API_KEY`, `ETSY_API_KEY`, `ETSY_CLIENT_SECRET` |
+| SSM Parameter Store | `ANTHROPIC_API_KEY`, `ETSY_API_KEY`, `ETSY_CLIENT_SECRET` |
 
-### Backend (AWS Lambda container)
+### Deploy commands
 ```bash
-# Build from repo root
-docker build -f backend/Dockerfile -t etsy-assistant .
-
-# Or via SAM (preferred — provisions Lambda + API Gateway + S3 + DynamoDB)
+# SAM (preferred — provisions everything)
 cd infra && sam build && sam deploy --guided
+
+# One-shot helper
+scripts/deploy-backend.sh
+
+# Manual docker build for local container testing
+docker build -f backend/Dockerfile -t etsy-assistant .
 ```
 
-`infra/template.yaml` is the source of truth for all AWS resources.
-
-### Frontend (Vercel)
-Connect the `frontend/` directory to Vercel. Set `NEXT_PUBLIC_API_URL` to the API Gateway invoke URL from the SAM stack outputs.
-
-### Deployment Plan (AWS)
-
-**Phase A — First backend deploy**
-1. Create AWS account and IAM user with `AdministratorAccess` for bootstrap; configure `aws configure` locally.
-2. Install SAM CLI and Docker.
-3. `cd infra && sam build && sam deploy --guided` — accept defaults, pick a stack name (e.g. `etsy-assistant-prod`) and region (`us-east-1`).
-4. Capture stack outputs: `ApiUrl`, `S3Bucket`, `DynamoDBTable`.
-5. Set Lambda env vars (via SAM template parameters or console): `S3_BUCKET`, `DYNAMODB_TABLE`, `CORS_ORIGINS`, `FRONTEND_URL`.
-6. Store secrets in SSM Parameter Store (`/etsy-assistant/anthropic-api-key`, `/etsy-assistant/etsy-api-key`, `/etsy-assistant/etsy-client-secret`) and reference them from `template.yaml`.
-
-**Phase B — Wire frontend to AWS**
-1. In Vercel project settings, set `NEXT_PUBLIC_API_URL` to the API Gateway URL.
-2. Redeploy frontend; verify `/health` from the browser.
-3. Add the Vercel domain to `CORS_ORIGINS` on the Lambda.
-
-**Phase C — Etsy OAuth**
-1. Register the app at developers.etsy.com; set callback to `https://<vercel-domain>/auth/etsy/callback`.
-2. Put `ETSY_API_KEY` and `ETSY_CLIENT_SECRET` in SSM; redeploy the stack.
-3. End-to-end test: connect Etsy → process a sketch → publish a draft listing.
-
-**Phase D — Hardening**
-- CloudWatch alarms on Lambda errors + 5xx from API Gateway.
-- S3 lifecycle rule: expire uploads/ prefix after 7 days.
-- DynamoDB on-demand billing (default in template).
-- GitHub Actions: OIDC role for `sam deploy` on push to `main`.
-- Custom domain via Route 53 + ACM cert (optional).
-
-### Estimated Cost (AWS-only)
-
-| Service | Monthly |
-|---------|---------|
-| Lambda + API Gateway | ~$0 (free tier) |
-| S3 | ~$0.50 |
-| DynamoDB (on-demand) | ~$0 (free tier) |
-| CloudWatch Logs | ~$0.10 |
-| Anthropic API | ~$0.05–0.10 per image |
-| Vercel (frontend) | $0 (Hobby) |
-| **Total** | **~$1–5/month** at low volume |
-
-## Testing
-
-Tests use synthetic images (numpy arrays) via fixtures in `conftest.py`. No real image files or AWS credentials needed.
-
-```bash
-uv run pytest                                         # Core tests (from repo root)
-cd backend && PYTHONPATH=../src:src uv run pytest      # Backend tests
-cd frontend && npm run build                           # Frontend type check + build
-```
+For the end-to-end rollout plan (AWS account → SAM → SSM secrets → Vercel env → Etsy OAuth app → hardening) see `DEPLOY.md` and `STATUS.md`.
 
 ## Dependencies
 
-**Core**: opencv-python-headless, Pillow, numpy, click, anthropic, httpx
-
-**Backend (additional)**: fastapi, mangum, boto3, uvicorn
-
-**Frontend**: next, react, tailwindcss, typescript
+- **Core**: opencv-python-headless, Pillow, numpy, click, anthropic, httpx
+- **Backend (additional)**: fastapi, mangum, boto3, uvicorn, psycopg (Supabase backend)
+- **Backend dev**: pytest, moto[dynamodb,s3], httpx
+- **Frontend**: next, react, tailwindcss, typescript
