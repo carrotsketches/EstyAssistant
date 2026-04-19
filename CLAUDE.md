@@ -31,13 +31,9 @@ The image processing, listing generation, bundle/mockup logic, and Etsy integrat
 
 FastAPI app wrapped with Mangum for Lambda. `main.py` wires CORS, a per-IP in-memory rate limiter (`RATE_LIMIT_PER_MINUTE`, default 60; resets on cold start), and routers from `routes/`. The Lambda entry point is `handler = Mangum(app, lifespan="off")`.
 
-#### Pluggable store backends (`backend/src/api/stores/`)
+#### Persistence (`api/credentials.py`)
 
-`stores/__init__.get_store()` selects the data store based on `DB_BACKEND`:
-- `dynamo` (default) — `dynamo_store.py`, DynamoDB single-table
-- `supabase` — `supabase_store.py`, Postgres `kv_store` table auto-created from `SCHEMA_SQL`
-
-`api/credentials.py` is a thin wrapper over the selected store for Etsy tokens, async jobs, saved listings, and custom templates.
+Single DynamoDB-backed module for Etsy tokens, OAuth state, async jobs, saved listings, and custom templates. Uses `boto3.resource("dynamodb")` against `DYNAMODB_TABLE` (default `etsy-assistant-credentials`). Item keys follow the pattern `pk = "<kind>#<id>"` (e.g. `listing#abc123`, `job#xyz`), with a single `etsy_credentials` row for the connected Etsy account.
 
 ### Frontend (`frontend/src/`)
 
@@ -103,9 +99,7 @@ Backend (`backend/.env`):
 - `ANTHROPIC_API_KEY` — Claude Vision
 - `ETSY_API_KEY`, `ETSY_CLIENT_SECRET` — Etsy OAuth
 - `FRONTEND_URL` — OAuth callback redirect (default `http://localhost:3000`)
-- `DB_BACKEND` — `dynamo` (default) or `supabase`
-- `DYNAMODB_TABLE` — table name (DynamoDB backend)
-- `SUPABASE_DB_URL` — Postgres connection string (Supabase backend)
+- `DYNAMODB_TABLE` — table name (default `etsy-assistant-credentials`)
 
 Frontend (`frontend/.env.local`):
 - `NEXT_PUBLIC_API_URL` — backend URL (default `http://localhost:8000`)
@@ -157,9 +151,7 @@ cd frontend && npm run build                        # Frontend type check + buil
 
 ## Deployment
 
-**Target stack: AWS end-to-end.** Backend on Lambda (container) behind API Gateway, S3 for images, DynamoDB for state. Frontend static on Vercel. `infra/template.yaml` is the source of truth for all AWS resources.
-
-Fly.io + Supabase wiring (`fly.toml`, `backend/Dockerfile.fly`, `scripts/setup-free.sh`, `stores/supabase_store.py`) exists as a legacy free-tier alternative but is **not the primary path** — do not extend it or add new references to it.
+**Stack: AWS end-to-end.** Backend on Lambda (container) behind API Gateway, S3 for images, DynamoDB for state. Frontend static on Vercel. `infra/template.yaml` is the source of truth for all AWS resources. There is no non-AWS path — do not add Fly.io, Supabase, or other provider shims.
 
 | Service | Purpose |
 |---------|---------|
@@ -189,6 +181,6 @@ For the end-to-end rollout plan (AWS account → SAM → SSM secrets → Vercel 
 ## Dependencies
 
 - **Core**: opencv-python-headless, Pillow, numpy, click, anthropic, httpx
-- **Backend (additional)**: fastapi, mangum, boto3, uvicorn, psycopg (Supabase backend)
+- **Backend (additional)**: fastapi, mangum, boto3, uvicorn
 - **Backend dev**: pytest, moto[dynamodb,s3], httpx
 - **Frontend**: next, react, tailwindcss, typescript
