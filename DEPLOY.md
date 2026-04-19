@@ -1,11 +1,12 @@
 # Deployment Guide
 
-Two deployment paths are supported:
+Three deployment paths are supported:
 
 - **[Free & Privacy-First](#path-a-free--privacy-first)** — Fly.io + Supabase + Vercel, zero AWS, no credit card required
-- **[AWS](#path-b-aws)** — Lambda + S3 + DynamoDB, ~$1-5/month, slightly more robust
+- **[AWS](#path-b-aws)** — Lambda + S3 + DynamoDB, deployed from your local machine
+- **[AWS from GitHub Actions](#path-c-aws-from-github-actions-no-terminal)** — same AWS stack as Path B, but deployed entirely from GitHub's web UI (no local CLI, Docker, or terminal)
 
-If you're not sure, use **Path A**.
+If you're not sure, use **Path A**. If you already know AWS and want to deploy without installing anything locally, use **Path C**.
 
 ---
 
@@ -188,6 +189,86 @@ export CORS_ORIGINS="https://etsy-assistant-xyz.vercel.app,http://localhost:3000
 | DynamoDB | 25 GB + 25 RCU/WCU | ~$0 |
 | ECR | 500 MB | ~$0 |
 | **Total** | | **$1-5/month** |
+
+---
+
+## Path C: AWS from GitHub Actions (no terminal)
+
+**Stack**: Vercel (frontend) + AWS Lambda + S3 + DynamoDB (same as Path B)
+**Cost**: same as Path B (~$1-5/month after free tier)
+**Time**: ~30 minutes (all done in a web browser)
+
+Use this path when you want the AWS stack but have no local dev environment — the GitHub Actions runner builds the Docker image and runs `sam deploy` for you. Credentials are federated via OIDC, so no long-lived AWS access keys are stored anywhere.
+
+### Step 1: AWS account + OIDC provider
+
+1. Sign up at https://aws.amazon.com/ (requires name, address, credit card, phone verification)
+2. Sign in to the AWS Console → **IAM** → **Identity providers** → **Add provider**
+   - Provider type: **OpenID Connect**
+   - Provider URL: `https://token.actions.githubusercontent.com`
+   - Audience: `sts.amazonaws.com`
+   - Click **Add provider**
+
+### Step 2: IAM role for GitHub Actions
+
+1. IAM → **Roles** → **Create role**
+2. Trusted entity type: **Web identity**
+   - Identity provider: `token.actions.githubusercontent.com`
+   - Audience: `sts.amazonaws.com`
+   - GitHub organization: `carrotsketches`
+   - GitHub repository: `EstyAssistant`
+   - (Leave branch empty to allow any branch; tighten later)
+   - Note: `carrotsketches/EstyAssistant` is the fork that auto-deploys. If you also want to run the workflow from the dev repo `paleyzpl/EstyAssistant`, add a second `StringLike` entry for its `sub` to the trust policy after creation.
+3. Attach permissions — pick one:
+   - **Simple (recommended for a personal project):** attach `PowerUserAccess` + `IAMFullAccess`. SAM needs `IAMFullAccess` to create the Lambda execution role.
+   - **Tight:** craft an inline policy covering CloudFormation, Lambda, ECR, S3, DynamoDB, API Gateway v2, SNS, CloudWatch Logs/Alarms, and `iam:*Role*` on the stack's execution role. Easier to do after the first successful deploy.
+4. Name the role e.g. `GitHubActionsEtsyAssistantDeployer`
+5. Copy its ARN (e.g. `arn:aws:iam::123456789012:role/GitHubActionsEtsyAssistantDeployer`) — you'll paste it into GitHub next.
+
+### Step 3: Anthropic API key (and optional Etsy)
+
+1. https://console.anthropic.com → Create Key → save `sk-ant-...`
+2. (Optional) https://www.etsy.com/developers → create app → save keystring
+
+### Step 4: GitHub repo configuration
+
+In the GitHub repo → **Settings**:
+
+**Secrets and variables → Actions → Secrets** (encrypted, never logged):
+- `ANTHROPIC_API_KEY` — the `sk-ant-...` key
+- `ETSY_API_KEY` — the Etsy keystring (optional; leave unset if not using publish)
+
+**Secrets and variables → Actions → Variables** (visible in workflow logs; safe because they're not secrets):
+- `AWS_ROLE_ARN` — the role ARN from Step 2
+- `CORS_ORIGINS` — comma-separated, e.g. `http://localhost:3000` for first deploy
+- `FRONTEND_URL` — your Vercel URL once known, or `http://localhost:3000` for first deploy
+- `ALARM_EMAIL` — email for CloudWatch alarm notifications (optional; leave unset to skip)
+
+### Step 5: First deploy
+
+1. GitHub repo → **Actions** tab → **Deploy Backend** workflow → **Run workflow**
+2. Leave the defaults (`stack_name=etsy-assistant`, `region=us-east-1`) or change them
+3. When it finishes (~5 min for first deploy, ~2 min subsequent), open the final log step. The `ApiUrl` from the stack outputs is your backend URL.
+
+### Step 6: Deploy frontend to Vercel
+
+Same as Path A Step 7, with `NEXT_PUBLIC_API_URL` set to the `ApiUrl` from Step 5.
+
+### Step 7: Fix CORS and redeploy
+
+1. Back in GitHub → Settings → Variables → edit `CORS_ORIGINS` to include your Vercel URL:
+   `https://your-app.vercel.app,http://localhost:3000`
+2. Actions → Deploy Backend → Run workflow again. `sam deploy` picks up the new parameter and updates the Lambda env var.
+
+### Tearing down
+
+Running `aws cloudformation delete-stack --stack-name etsy-assistant` from any machine with AWS creds works. Or from the AWS Console → CloudFormation → select the stack → **Delete**. Then delete the ECR repo and the S3 bucket (they're retained by default).
+
+### Troubleshooting
+
+- **`Not authorized to perform sts:AssumeRoleWithWebIdentity`** — the trust policy's `sub` condition doesn't match the repo the workflow is running from. Check it reads `repo:carrotsketches/EstyAssistant:*` (or whichever repo you're deploying from).
+- **`AccessDenied` during `sam deploy`** — role is missing a permission. Either attach `PowerUserAccess` + `IAMFullAccess`, or read the error to add the specific action to your inline policy.
+- **First build is slow (~5 min)** — Docker layers are uncached on the runner. Subsequent deploys reuse ECR image layers.
 
 ---
 
