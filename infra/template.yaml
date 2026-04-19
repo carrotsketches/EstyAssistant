@@ -68,8 +68,8 @@ Resources:
     Type: AWS::Serverless::Function
     Metadata:
       DockerTag: latest
-      DockerContext: ../backend
-      Dockerfile: Dockerfile
+      DockerContext: ..
+      Dockerfile: backend/Dockerfile
     Properties:
       PackageType: Image
       Architectures: [x86_64]
