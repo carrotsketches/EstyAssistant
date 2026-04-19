@@ -119,32 +119,33 @@
 
 ## Next Steps (Priority Order)
 
-### 1. Deploy Backend to Fly.io (Free Tier) — ~15 min
+Deployment target is **AWS end-to-end** (Lambda + API Gateway + S3 + DynamoDB). Fly.io and Supabase are not used. See `CLAUDE.md` → Deployment for the full plan.
+
+### 1. Deploy Backend to AWS via SAM — ~30 min
 Everything is ready in the repo:
-- `backend/Dockerfile.fly` — Python 3.12 slim image for Fly.io
-- `fly.toml` — Fly.io config (auto-stop, 512MB, shared CPU)
-- `scripts/setup-free.sh` — One-command setup script
+- `backend/Dockerfile` — Lambda container (Python 3.12, built from repo root)
+- `infra/template.yaml` — SAM template (Lambda + API Gateway + S3 + DynamoDB + IAM)
+- `scripts/deploy-backend.sh` — wrapper around `sam build && sam deploy`
 
 Steps:
-1. Install Fly CLI: `curl -L https://fly.io/install.sh | sh`
-2. Sign up: `fly auth signup` (use new ProtonMail)
-3. Run: `bash scripts/setup-free.sh`
-4. Set secrets: `fly secrets set ANTHROPIC_API_KEY=... ETSY_API_KEY=...`
-5. Update Vercel env var `NEXT_PUBLIC_API_URL` to the Fly.io URL
+1. Install AWS CLI + SAM CLI; run `aws configure` with an IAM user.
+2. `cd infra && sam build && sam deploy --guided` (stack name `etsy-assistant-prod`, region `us-east-1`).
+3. Capture stack outputs: `ApiUrl`, `S3Bucket`, `DynamoDBTable`.
+4. Put secrets in SSM Parameter Store: `ANTHROPIC_API_KEY`, `ETSY_API_KEY`, `ETSY_CLIENT_SECRET`.
+5. Update Vercel env var `NEXT_PUBLIC_API_URL` to the API Gateway URL.
 
-### 2. Set Up Supabase (Free Tier) — ~10 min
-For database (credentials, jobs, listings) and S3-compatible storage:
-1. Sign up at supabase.com (use new ProtonMail)
-2. Create project, get connection string + S3 endpoint
-3. Set env vars on Fly.io: `DB_BACKEND=supabase`, `STORAGE_BACKEND=supabase`
+### 2. Connect Etsy OAuth
+1. Create Etsy app at developers.etsy.com.
+2. Set callback URL to `https://esty-assistant.vercel.app/auth/etsy/callback`.
+3. Add the Vercel origin to the Lambda's `CORS_ORIGINS` and redeploy.
 
-### 3. Connect Etsy OAuth
-1. Create Etsy app at developers.etsy.com
-2. Set callback URL to `https://esty-assistant.vercel.app/auth/etsy/callback`
-3. Add `ETSY_API_KEY` to Fly.io secrets
+### 3. Harden Production
+- CloudWatch alarms on Lambda errors + API Gateway 5xx.
+- S3 lifecycle rule: expire `uploads/` after 7 days.
+- GitHub Actions: OIDC role for `sam deploy` on push to `main` (already wired — PR #13).
 
 ### 4. Future Enhancements
-- [ ] Custom domain for Vercel
+- [ ] Custom domain via Route 53 + ACM (backend) and Vercel (frontend)
 - [ ] Analytics dashboard — track listing performance
 - [ ] Watermark option for preview images
 - [ ] SEO score improvements
