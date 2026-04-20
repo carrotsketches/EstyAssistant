@@ -66,11 +66,12 @@ def _generate_pkce() -> tuple[str, str]:
     return verifier, challenge
 
 
-def authorize(api_key: str, port: int = 5555) -> EtsyCredentials:
+def authorize(api_key: str, port: int = 5555) -> EtsyCredentials:  # pragma: no cover
     """Run the OAuth 2.0 PKCE flow for Etsy.
 
     Opens a browser for user authorization and starts a local HTTP server
-    to receive the callback.
+    to receive the callback. Excluded from coverage: interactive flow is
+    exercised end-to-end by the web `exchange_code()` path, which is tested.
 
     Args:
         api_key: Etsy API key (client_id).

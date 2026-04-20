@@ -139,12 +139,12 @@ Frontend (`frontend/.env.local`):
 Tests use synthetic images (numpy arrays) from `tests/conftest.py` — no real image files or AWS/Anthropic credentials needed. Backend tests stub AWS with moto.
 
 ```bash
-uv run pytest                                      # Core (with coverage, fails <80%)
-cd backend && PYTHONPATH=../src:src uv run pytest   # Backend (with coverage, fails <80%)
+uv run pytest                                      # Core (with coverage, fails <90%)
+cd backend && PYTHONPATH=../src:src uv run pytest   # Backend (with coverage, fails <90%)
 cd frontend && npm run build                        # Frontend type check + build
 ```
 
-**Coverage floor: 80%.** Both Python suites run `pytest-cov` with `--cov-fail-under=80` pinned in `pyproject.toml`. Any new code must keep the suite at or above 80% or add tests to get there — do not merge with coverage regressions.
+**Coverage floor: 90%.** Both Python suites run `pytest-cov` with `--cov-fail-under=90` pinned in `pyproject.toml`. Any new code must keep the suite at or above 90% or add tests to get there — do not merge with coverage regressions. The only paths currently exempted via `# pragma: no cover` are genuinely interactive flows (e.g. `etsy_api.authorize()`, which spins up a local `HTTPServer` and opens a browser).
 
 ## CI (`.github/workflows/`)
 
