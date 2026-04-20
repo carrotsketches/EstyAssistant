@@ -24,7 +24,7 @@ packages = ["src/api"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=src/api --cov-report=term-missing --cov-fail-under=80"
+addopts = "--cov=src/api --cov-report=term-missing --cov-fail-under=90"
 
 [dependency-groups]
 dev = [
