@@ -17,6 +17,7 @@ jobs:
           version: "latest"
       - run: uv sync --group dev
       - run: uv run pytest -v
+        # pyproject.toml pins --cov-fail-under=80
 
   backend-tests:
     name: Backend Tests
@@ -28,6 +29,7 @@ jobs:
           version: "latest"
       - run: cd backend && uv sync --group dev
       - run: cd backend && PYTHONPATH=../src:src uv run pytest -v
+        # pyproject.toml pins --cov-fail-under=80
 
   frontend-build:
     name: Frontend Build

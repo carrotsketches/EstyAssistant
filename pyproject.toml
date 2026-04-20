@@ -24,6 +24,10 @@ packages = ["src/etsy_assistant"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--cov=src/etsy_assistant --cov-report=term-missing --cov-fail-under=80"
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=7.1.0",
+]
