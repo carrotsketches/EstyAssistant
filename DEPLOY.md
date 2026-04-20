@@ -20,7 +20,7 @@ If you're not sure, use **Path A**. If you already know AWS and want to deploy w
 
 1. Create a dedicated ProtonMail: https://proton.me/mail (free)
 2. Create a new GitHub account with that email
-3. Fork `paleyzpl/EstyAssistant` into the new GitHub account (or transfer the repo)
+3. Fork `carrotsketches/EstyAssistant` into the new GitHub account (or transfer the repo)
 
 ### Step 2: Supabase (DB + storage) — 5 min
 
@@ -160,7 +160,7 @@ flyctl secrets set -a YOUR_FLY_APP_NAME \
 ### Step 3: Deploy Backend
 
 ```bash
-git clone https://github.com/paleyzpl/EstyAssistant.git
+git clone https://github.com/carrotsketches/EstyAssistant.git
 cd EstyAssistant
 export ANTHROPIC_API_KEY="sk-ant-..."
 ./scripts/deploy-backend.sh
@@ -218,7 +218,7 @@ Use this path when you want the AWS stack but have no local dev environment — 
    - GitHub organization: `carrotsketches`
    - GitHub repository: `EstyAssistant`
    - (Leave branch empty to allow any branch; tighten later)
-   - Note: `carrotsketches/EstyAssistant` is the fork that auto-deploys. If you also want to run the workflow from the dev repo `paleyzpl/EstyAssistant`, add a second `StringLike` entry for its `sub` to the trust policy after creation.
+   - Note: `carrotsketches/EstyAssistant` is the canonical repo that auto-deploys.
 3. Attach permissions — pick one:
    - **Simple (recommended for a personal project):** attach `PowerUserAccess` + `IAMFullAccess`. SAM needs `IAMFullAccess` to create the Lambda execution role.
    - **Tight:** craft an inline policy covering CloudFormation, Lambda, ECR, S3, DynamoDB, API Gateway v2, SNS, CloudWatch Logs/Alarms, and `iam:*Role*` on the stack's execution role. Easier to do after the first successful deploy.

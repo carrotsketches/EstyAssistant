@@ -111,11 +111,10 @@
 ## Current Deployment
 
 - **Frontend**: Live at `https://esty-assistant.vercel.app/` (Vercel Hobby, free)
-  - Deployed from fork: `carrotsketches/EstyAssistant`
-  - Auto-deploys on push to `main` branch of the fork
-  - Sync fork from `paleyzpl/EstyAssistant` to trigger redeploy
+  - Deployed from `carrotsketches/EstyAssistant`
+  - Auto-deploys on push to `main`
 - **Backend**: Not deployed yet (frontend is static/UI-only)
-- **Development repo**: `paleyzpl/EstyAssistant` (Claude Code has access here)
+- **Repo**: `carrotsketches/EstyAssistant`
 
 ## Next Steps (Priority Order)
 
