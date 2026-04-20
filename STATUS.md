@@ -130,7 +130,7 @@ Steps:
 1. Install AWS CLI + SAM CLI; run `aws configure` with an IAM user.
 2. `cd infra && sam build && sam deploy --guided` (stack name `etsy-assistant-prod`, region `us-east-1`).
 3. Capture stack outputs: `ApiUrl`, `S3Bucket`, `DynamoDBTable`.
-4. Put secrets in SSM Parameter Store: `ANTHROPIC_API_KEY`, `ETSY_API_KEY`, `ETSY_CLIENT_SECRET`.
+4. Put secrets in SSM Parameter Store: `ANTHROPIC_API_KEY`, `ETSY_API_KEY`.
 5. Update Vercel env var `NEXT_PUBLIC_API_URL` to the API Gateway URL.
 
 ### 2. Connect Etsy OAuth

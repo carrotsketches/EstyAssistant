@@ -97,7 +97,7 @@ Backend (`backend/.env`):
 - `CORS_ORIGINS` — comma-separated allowed origins
 - `RATE_LIMIT_PER_MINUTE` — default 60
 - `ANTHROPIC_API_KEY` — Claude Vision
-- `ETSY_API_KEY`, `ETSY_CLIENT_SECRET` — Etsy OAuth
+- `ETSY_API_KEY` — Etsy OAuth client ID (PKCE flow, no client secret needed)
 - `FRONTEND_URL` — OAuth callback redirect (default `http://localhost:3000`)
 - `DYNAMODB_TABLE` — table name (default `etsy-assistant-credentials`)
 
@@ -164,7 +164,7 @@ cd frontend && npm run build                        # Frontend type check + buil
 | DynamoDB | Single table for credentials, jobs, listings, templates |
 | IAM | Lambda execution role (S3 + DynamoDB + logs) |
 | CloudWatch Logs | Lambda logs + metrics |
-| SSM Parameter Store | `ANTHROPIC_API_KEY`, `ETSY_API_KEY`, `ETSY_CLIENT_SECRET` |
+| SSM Parameter Store | `ANTHROPIC_API_KEY`, `ETSY_API_KEY` |
 
 ### Deploy commands
 ```bash
