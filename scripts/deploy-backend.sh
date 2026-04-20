@@ -11,7 +11,10 @@ STACK_NAME="${STACK_NAME:-etsy-assistant}"
 REGION="${AWS_REGION:-us-east-1}"
 ECR_REPO="${ECR_REPO:-etsy-assistant}"
 CORS_ORIGINS="${CORS_ORIGINS:-http://localhost:3000}"
+FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}"
+ALARM_EMAIL="${ALARM_EMAIL:-}"
 ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
+ETSY_API_KEY="${ETSY_API_KEY:-}"
 
 echo "==> Checking prerequisites..."
 command -v aws >/dev/null 2>&1 || { echo "ERROR: aws CLI not found. Install: https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html"; exit 1; }
@@ -53,7 +56,10 @@ sam deploy \
     --capabilities CAPABILITY_IAM \
     --parameter-overrides \
         "CorsOrigins=$CORS_ORIGINS" \
+        "FrontendUrl=$FRONTEND_URL" \
+        "AlarmEmail=$ALARM_EMAIL" \
         "AnthropicApiKey=$ANTHROPIC_API_KEY" \
+        "EtsyApiKey=$ETSY_API_KEY" \
     --no-confirm-changeset
 
 # Get outputs

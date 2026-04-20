@@ -21,6 +21,14 @@ Parameters:
     Type: String
     Default: ""
     Description: Email for CloudWatch alarm notifications (leave empty to skip)
+  LambdaReservedConcurrency:
+    Type: Number
+    Default: 10
+    Description: Max concurrent Lambda executions (caps runaway invocations)
+  LogRetentionInDays:
+    Type: Number
+    Default: 30
+    Description: CloudWatch log retention in days
 
 Globals:
   Function:
@@ -32,11 +40,16 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub "etsy-assistant-images-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
       CorsConfiguration:
         CorsRules:
           - AllowedHeaders: ["*"]
             AllowedMethods: [GET, PUT]
-            AllowedOrigins: ["*"]
+            AllowedOrigins: !Split [",", !Ref CorsOrigins]
             MaxAge: 3600
       LifecycleConfiguration:
         Rules:
@@ -73,6 +86,7 @@ Resources:
     Properties:
       PackageType: Image
       Architectures: [x86_64]
+      ReservedConcurrentExecutions: !Ref LambdaReservedConcurrency
       Environment:
         Variables:
           S3_BUCKET: !Ref ImageBucket
@@ -97,6 +111,12 @@ Resources:
           Properties:
             Path: /
             Method: ANY
+
+  ApiFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${ApiFunction}"
+      RetentionInDays: !Ref LogRetentionInDays
 
   # ── CloudWatch Alarms ──
 
@@ -182,6 +202,8 @@ Resources:
       Threshold: 20
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
+      AlarmActions:
+        - !If [HasAlarmEmail, !Ref AlarmTopic, !Ref "AWS::NoValue"]
 
   ApiGateway5xxAlarm:
     Type: AWS::CloudWatch::Alarm
