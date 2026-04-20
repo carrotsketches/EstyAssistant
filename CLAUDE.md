@@ -139,10 +139,12 @@ Frontend (`frontend/.env.local`):
 Tests use synthetic images (numpy arrays) from `tests/conftest.py` — no real image files or AWS/Anthropic credentials needed. Backend tests stub AWS with moto.
 
 ```bash
-uv run pytest                                      # Core (~90 tests)
-cd backend && PYTHONPATH=../src:src uv run pytest   # Backend (~85 tests)
+uv run pytest                                      # Core (with coverage, fails <80%)
+cd backend && PYTHONPATH=../src:src uv run pytest   # Backend (with coverage, fails <80%)
 cd frontend && npm run build                        # Frontend type check + build
 ```
+
+**Coverage floor: 80%.** Both Python suites run `pytest-cov` with `--cov-fail-under=80` pinned in `pyproject.toml`. Any new code must keep the suite at or above 80% or add tests to get there — do not merge with coverage regressions.
 
 ## CI (`.github/workflows/`)
 
