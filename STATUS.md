@@ -124,15 +124,15 @@ Deployment target is **AWS end-to-end** (Lambda + API Gateway + S3 + DynamoDB). 
 ### 1. Deploy Backend to AWS via SAM — ~30 min
 Everything is ready in the repo:
 - `backend/Dockerfile` — Lambda container (Python 3.12, built from repo root)
-- `infra/template.yaml` — SAM template (Lambda + API Gateway + S3 + DynamoDB + IAM)
-- `scripts/deploy-backend.sh` — wrapper around `sam build && sam deploy`
+- `infra/template.yaml` — SAM template (Lambda + API Gateway + S3 + DynamoDB + alarms)
+- `.github/workflows/deploy.yml` — OIDC-based CI deploy (preferred path)
+- `scripts/deploy-backend.sh` — local fallback wrapper around `sam build && sam deploy`
 
-Steps:
-1. Install AWS CLI + SAM CLI; run `aws configure` with an IAM user.
-2. `cd infra && sam build && sam deploy --guided` (stack name `etsy-assistant-prod`, region `us-east-1`).
-3. Capture stack outputs: `ApiUrl`, `S3Bucket`, `DynamoDBTable`.
-4. Put secrets in SSM Parameter Store: `ANTHROPIC_API_KEY`, `ETSY_API_KEY`, `ETSY_CLIENT_SECRET`.
-5. Update Vercel env var `NEXT_PUBLIC_API_URL` to the API Gateway URL.
+Follow `infra/README.md` for the full bootstrap. TL;DR:
+1. One-time: deploy `etsy-assistant-oidc` CloudFormation stack to create the GitHub OIDC provider + `etsy-assistant-deploy` role.
+2. Set GitHub repo variables (`AWS_ROLE_ARN`, `CORS_ORIGINS`, `FRONTEND_URL`, `ALARM_EMAIL`) and secrets (`ANTHROPIC_API_KEY`).
+3. Trigger **Actions → Deploy Backend → Run workflow**.
+4. Capture stack outputs (`ApiUrl`, `BucketName`); set `NEXT_PUBLIC_API_URL` in Vercel to `ApiUrl`.
 
 ### 2. Connect Etsy OAuth
 1. Create Etsy app at developers.etsy.com.
