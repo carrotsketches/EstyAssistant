@@ -10,6 +10,37 @@ Two interfaces share the same core library:
 - **CLI** — Click-based command-line tool (`uv run etsy-assistant`)
 - **Web** — Next.js frontend (Vercel) + FastAPI backend (AWS Lambda container)
 
+## Quick Deploy (resume here)
+
+End-to-end "from zero to live backend" recipe. Full detail in `DEPLOY.md` Path B.
+
+**Prereqs (one-time, manual):** AWS account + admin user with `aws configure` done locally; Anthropic API key from <https://console.anthropic.com>; (optional) Etsy app from <https://developers.etsy.com>.
+
+```bash
+# 1. Bootstrap OIDC role (one-time per AWS account; ~1 min)
+aws cloudformation deploy \
+  --stack-name etsy-assistant-oidc \
+  --template-file infra/bootstrap-oidc.yaml \
+  --capabilities CAPABILITY_NAMED_IAM
+# If the GitHub OIDC provider already exists, add: --parameter-overrides CreateOIDCProvider=false
+
+# 2. Read the role ARN — paste into the GitHub AWS_ROLE_ARN variable in step 3
+aws cloudformation describe-stacks --stack-name etsy-assistant-oidc \
+  --query 'Stacks[0].Outputs[?OutputKey==`RoleArn`].OutputValue' --output text
+```
+
+**3. GitHub repo → Settings → Secrets and variables → Actions:**
+- Variables: `AWS_ROLE_ARN` (from step 2), `CORS_ORIGINS=https://esty-assistant.vercel.app,http://localhost:3000`, `FRONTEND_URL=https://esty-assistant.vercel.app`, `ALARM_EMAIL=<your email>` (optional)
+- Secrets: `ANTHROPIC_API_KEY` (required), `ETSY_API_KEY` (set later in Phase C)
+
+**4. First deploy:** Actions → **Deploy Backend** → **Run workflow** (defaults: stack `etsy-assistant`, region `us-east-1`). ~5 min cold, ~2 min after. Capture `ApiUrl` and `BucketName` from the "Show stack outputs" step.
+
+**5. Wire frontend:** in Vercel for the `frontend/` project, set `NEXT_PUBLIC_API_URL` = `ApiUrl`, redeploy. Verify `${ApiUrl}/health` → 200 in the browser.
+
+**6. Etsy OAuth (Phase C):** register app at developers.etsy.com with callback `https://<vercel-domain>/auth/etsy/callback`; set `ETSY_API_KEY` in GitHub secrets; re-run Deploy Backend so Lambda picks up the new env var.
+
+**Teardown:** empty `etsy-assistant-images-<account>` then `aws cloudformation delete-stack --stack-name etsy-assistant`.
+
 ## Architecture
 
 ```
