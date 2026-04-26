@@ -1,0 +1,75 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  One-time bootstrap for Etsy Assistant CI deploys. Creates the GitHub Actions
+  OIDC provider (if missing) and an IAM role that the
+  .github/workflows/deploy.yml workflow assumes via web identity federation.
+  Deploy this once with an admin user; afterwards CI deploys without any
+  long-lived AWS keys.
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Default: carrotsketches
+    Description: GitHub organization or user that owns the repo
+  GitHubRepo:
+    Type: String
+    Default: EstyAssistant
+    Description: GitHub repository name
+  RoleName:
+    Type: String
+    Default: etsy-assistant-deploy
+    Description: IAM role name; paste this role's ARN into the AWS_ROLE_ARN GitHub variable
+  CreateOIDCProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >
+      Set to "false" if the GitHub OIDC provider already exists in this account
+      (only one is allowed per account). The role will reuse the existing one.
+
+Conditions:
+  ShouldCreateOIDCProvider: !Equals [!Ref CreateOIDCProvider, "true"]
+
+Resources:
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: ShouldCreateOIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: !Sub "GitHub Actions deploy role for ${GitHubOrg}/${GitHubRepo}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOrg}/${GitHubRepo}:*"
+      ManagedPolicyArns:
+        # PowerUserAccess covers Lambda/S3/DynamoDB/ECR/API Gateway/CloudWatch.
+        # IAMFullAccess is needed because SAM creates the Lambda execution role.
+        # Tighten with a custom policy after the first successful deploy.
+        - arn:aws:iam::aws:policy/PowerUserAccess
+        - arn:aws:iam::aws:policy/IAMFullAccess
+
+Outputs:
+  RoleArn:
+    Description: Paste this into the AWS_ROLE_ARN GitHub Actions variable
+    Value: !GetAtt DeployRole.Arn
+  RoleName:
+    Description: IAM role name
+    Value: !Ref DeployRole

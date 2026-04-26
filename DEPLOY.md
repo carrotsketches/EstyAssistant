@@ -86,37 +86,39 @@ export CORS_ORIGINS="https://your-app.vercel.app,http://localhost:3000"
 
 Same AWS stack as Path A, but the GitHub Actions runner builds the Docker image and runs `sam deploy` for you. Credentials are federated via OIDC, so no long-lived AWS access keys are stored anywhere.
 
-### Step 1: AWS account + OIDC provider
+### Step 1: AWS account + OIDC role (one CloudFormation deploy)
 
-1. Sign up at https://aws.amazon.com/ (requires name, address, credit card, phone verification)
-2. Sign in to the AWS Console → **IAM** → **Identity providers** → **Add provider**
-   - Provider type: **OpenID Connect**
-   - Provider URL: `https://token.actions.githubusercontent.com`
-   - Audience: `sts.amazonaws.com`
-   - Click **Add provider**
+1. Sign up at https://aws.amazon.com/ (requires name, address, credit card, phone verification).
+2. Create an IAM admin user, generate access keys, and run `aws configure` locally — these creds are only needed for this one-time bootstrap.
+3. Deploy the bootstrap stack from this repo:
 
-### Step 2: IAM role for GitHub Actions
+   ```bash
+   aws cloudformation deploy \
+     --stack-name etsy-assistant-oidc \
+     --template-file infra/bootstrap-oidc.yaml \
+     --capabilities CAPABILITY_NAMED_IAM
+   ```
 
-1. IAM → **Roles** → **Create role**
-2. Trusted entity type: **Web identity**
-   - Identity provider: `token.actions.githubusercontent.com`
-   - Audience: `sts.amazonaws.com`
-   - GitHub organization: `carrotsketches`
-   - GitHub repository: `EstyAssistant`
-   - (Leave branch empty to allow any branch; tighten later)
-   - Note: `carrotsketches/EstyAssistant` is the fork that auto-deploys. If you also want to run the workflow from the dev repo `paleyzpl/EstyAssistant`, add a second `StringLike` entry for its `sub` to the trust policy after creation.
-3. Attach permissions — pick one:
-   - **Simple (recommended for a personal project):** attach `PowerUserAccess` + `IAMFullAccess`. SAM needs `IAMFullAccess` to create the Lambda execution role.
-   - **Tight:** craft an inline policy covering CloudFormation, Lambda, ECR, S3, DynamoDB, API Gateway v2, SNS, CloudWatch Logs/Alarms, and `iam:*Role*` on the stack's execution role. Easier to do after the first successful deploy.
-4. Name the role e.g. `GitHubActionsEtsyAssistantDeployer`
-5. Copy its ARN (e.g. `arn:aws:iam::123456789012:role/GitHubActionsEtsyAssistantDeployer`) — you'll paste it into GitHub next.
+   This creates the GitHub Actions OIDC provider (if missing in your account) and the `etsy-assistant-deploy` IAM role, scoped to `repo:carrotsketches/EstyAssistant:*` via the `sub` condition. Permissions: `PowerUserAccess` + `IAMFullAccess` (SAM needs the latter to create the Lambda execution role). Tighten after the first successful deploy.
 
-### Step 3: Anthropic API key (and optional Etsy)
+4. Read back the role ARN — you'll paste it into the `AWS_ROLE_ARN` GitHub variable in Step 3:
+
+   ```bash
+   aws cloudformation describe-stacks \
+     --stack-name etsy-assistant-oidc \
+     --query 'Stacks[0].Outputs[?OutputKey==`RoleArn`].OutputValue' \
+     --output text
+   ```
+
+> If the OIDC provider already exists in this account (only one allowed per account), redeploy with `--parameter-overrides CreateOIDCProvider=false`.
+> To run the workflow from a different repo too, redeploy with `--parameter-overrides GitHubOrg=<owner> GitHubRepo=<repo>`, or edit the role's trust policy by hand to add a second `StringLike` entry.
+
+### Step 2: Anthropic API key (and optional Etsy)
 
 1. https://console.anthropic.com → Create Key → save `sk-ant-...`
 2. (Optional) https://www.etsy.com/developers → create app → save keystring
 
-### Step 4: GitHub repo configuration
+### Step 3: GitHub repo configuration
 
 In the GitHub repo → **Settings**:
 
@@ -125,22 +127,22 @@ In the GitHub repo → **Settings**:
 - `ETSY_API_KEY` — the Etsy keystring (optional; leave unset if not using publish)
 
 **Secrets and variables → Actions → Variables** (visible in workflow logs; safe because they're not secrets):
-- `AWS_ROLE_ARN` — the role ARN from Step 2
+- `AWS_ROLE_ARN` — the role ARN from Step 1
 - `CORS_ORIGINS` — comma-separated, e.g. `http://localhost:3000` for first deploy
 - `FRONTEND_URL` — your Vercel URL once known, or `http://localhost:3000` for first deploy
 - `ALARM_EMAIL` — email for CloudWatch alarm notifications (optional; leave unset to skip)
 
-### Step 5: First deploy
+### Step 4: First deploy
 
 1. GitHub repo → **Actions** tab → **Deploy Backend** workflow → **Run workflow**
 2. Leave the defaults (`stack_name=etsy-assistant`, `region=us-east-1`) or change them
 3. When it finishes (~5 min for first deploy, ~2 min subsequent), open the final log step. The `ApiUrl` from the stack outputs is your backend URL.
 
-### Step 6: Deploy frontend to Vercel
+### Step 5: Deploy frontend to Vercel
 
-Same as Path A Step 4, with `NEXT_PUBLIC_API_URL` set to the `ApiUrl` from Step 5.
+Same as Path A Step 4, with `NEXT_PUBLIC_API_URL` set to the `ApiUrl` from Step 4.
 
-### Step 7: Fix CORS and redeploy
+### Step 6: Fix CORS and redeploy
 
 1. Back in GitHub → Settings → Variables → edit `CORS_ORIGINS` to include your Vercel URL:
    `https://your-app.vercel.app,http://localhost:3000`
