@@ -70,10 +70,17 @@ Skip any step with `--skip <step>` or `--no-perspective`.
 ## Testing
 
 ```bash
-uv run pytest                                         # Core tests (87)
-cd backend && PYTHONPATH=../src:src uv run pytest      # Backend tests (25)
+uv run pytest                                         # Core tests (179, ≥80% cov)
+cd backend && PYTHONPATH=../src:src uv run pytest      # Backend tests (140, ≥80% cov)
 cd frontend && npm run build                           # Frontend type check
 ```
+
+## Maintenance
+
+- [`docs/COPILOT_MAINTENANCE.md`](docs/COPILOT_MAINTENANCE.md) — workflow guide
+  for small, AI-assisted edits (the "30-second loop" + autonomous-loop prompt).
+- [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md) — feature ↔ test matrix.
+  Read this before changing a feature so you know which tests must stay green.
 
 ## Environment Variables
 

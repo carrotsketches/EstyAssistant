@@ -204,3 +204,86 @@ class TestPublishCommand:
             )
         assert result.exit_code == 0, result.output
         assert "dry-run" in result.output.lower()
+
+    def test_full_publish_flow_uploads_image_and_file(
+        self, runner, image_file, fake_listing, tmp_path,
+    ):
+        """End-to-end CLI publish: process is mocked, but the orchestration
+        (generate metadata → create draft → upload preview → upload digital
+        file) is exercised."""
+        creds_path = tmp_path / "creds.json"
+
+        from etsy_assistant.etsy_api import EtsyCredentials, DraftListing
+        creds = EtsyCredentials(
+            api_key="key", access_token="tok",
+            refresh_token="ref", user_id="123", shop_id="456",
+        )
+        creds.save(creds_path)
+
+        draft = DraftListing(
+            listing_id="listing-999",
+            title="Ink Sketch",
+            url="https://etsy.com/listing/999",
+        )
+
+        with patch("etsy_assistant.cli.generate_listing", return_value=fake_listing), \
+             patch("etsy_assistant.etsy_api.create_draft_listing", return_value=draft) as mock_draft, \
+             patch("etsy_assistant.etsy_api.upload_listing_image", return_value="img-1") as mock_img, \
+             patch("etsy_assistant.etsy_api.upload_listing_file", return_value="file-1") as mock_file:
+            result = runner.invoke(
+                main,
+                ["publish", str(image_file), "-p", "4.99",
+                 "--skip-processing",
+                 "--credentials", str(creds_path)],
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_draft.assert_called_once()
+        mock_img.assert_called_once()
+        mock_file.assert_called_once()
+        assert "listing-999" in result.output
+        assert "https://etsy.com/listing/999" in result.output
+
+
+class TestAuthCommand:
+    def test_auth_runs_oauth_and_saves_creds(self, runner, tmp_path):
+        from etsy_assistant.etsy_api import EtsyCredentials
+
+        fake_creds = EtsyCredentials(
+            api_key="key", access_token="123.tok",
+            refresh_token="ref", user_id="123", shop_id="456",
+        )
+        creds_path = tmp_path / "creds.json"
+
+        with patch("etsy_assistant.etsy_api.authorize", return_value=fake_creds) as mock_auth:
+            result = runner.invoke(
+                main,
+                ["auth", "--api-key", "ETSY_KEY",
+                 "--port", "5556",
+                 "--credentials", str(creds_path)],
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_auth.assert_called_once_with("ETSY_KEY", port=5556)
+        assert creds_path.exists()
+        assert "123" in result.output  # user_id
+        assert "456" in result.output  # shop_id
+        assert str(creds_path) in result.output
+
+    def test_auth_uses_api_key_prompt(self, runner, tmp_path):
+        """If --api-key is omitted, Click should prompt for it."""
+        from etsy_assistant.etsy_api import EtsyCredentials
+
+        fake_creds = EtsyCredentials(
+            api_key="key", access_token="123.tok",
+            refresh_token="ref", user_id="123",
+        )
+        creds_path = tmp_path / "creds.json"
+        with patch("etsy_assistant.etsy_api.authorize", return_value=fake_creds):
+            result = runner.invoke(
+                main,
+                ["auth", "--credentials", str(creds_path)],
+                input="prompted_key\n",
+            )
+        assert result.exit_code == 0, result.output
+        assert "Etsy API Key" in result.output

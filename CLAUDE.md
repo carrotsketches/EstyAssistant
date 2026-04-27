@@ -177,6 +177,8 @@ cd frontend && npm run build                        # Frontend type check + buil
 
 **Coverage floor: 80%.** Both Python suites run `pytest-cov` with `--cov-fail-under=80` pinned in `pyproject.toml`. Any new code must keep the suite at or above 80% or add tests to get there — do not merge with coverage regressions.
 
+**Maintenance docs.** For small, AI-assisted edits follow the workflow in [`docs/COPILOT_MAINTENANCE.md`](docs/COPILOT_MAINTENANCE.md) and consult the feature → test matrix in [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md) before changing any feature.
+
 ## CI (`.github/workflows/`)
 
 - `ci.yml` — runs on every push/PR to `main`: three parallel jobs (core tests, backend tests, frontend build).
